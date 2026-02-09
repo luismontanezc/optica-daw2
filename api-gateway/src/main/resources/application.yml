@@ -1,0 +1,146 @@
+# ===================================
+# API GATEWAY - CONFIGURATION
+# ===================================
+
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+
+  cloud:
+    gateway:
+      # DESCUBRIMIENTO AUTOMÁTICO DE SERVICIOS
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+
+      # CONFIGURACIÓN DE RUTAS
+      routes:
+        # ============================================
+        # MICROSERVICIO DE AUTENTICACIÓN (ms-auth)
+        # ============================================
+        - id: ms-auth
+          uri: lb://ms-auth
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - RewritePath=/api/auth/(?<segment>.*), /${segment}
+            - name: CircuitBreaker
+              args:
+                name: authCircuitBreaker
+                fallbackUri: forward:/fallback/auth
+
+        # ============================================
+        # MICROSERVICIO DE CITAS (ms-citas)
+        # ============================================
+        - id: ms-citas
+          uri: lb://ms-citas
+          predicates:
+            - Path=/api/citas/**, /api/sucursales/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: citasCircuitBreaker
+                fallbackUri: forward:/fallback/citas
+
+        # ============================================
+        # MICROSERVICIO DE PRODUCTOS (ms-productos)
+        # ============================================
+        - id: ms-productos
+          uri: lb://ms-productos
+          predicates:
+            - Path=/api/productos/**, /api/categorias/**, /api/marcas/**, /api/banners/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: productosCircuitBreaker
+                fallbackUri: forward:/fallback/productos
+
+        # ============================================
+        # MICROSERVICIO DE PEDIDOS (ms-pedidos)
+        # ============================================
+        - id: ms-pedidos
+          uri: lb://ms-pedidos
+          predicates:
+            - Path=/api/pedidos/**, /api/carrito/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: pedidosCircuitBreaker
+                fallbackUri: forward:/fallback/pedidos
+
+      # CONFIGURACIÓN GLOBAL
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_UNIQUE
+        - AddResponseHeader=X-Response-Time, ${response-time}
+
+      # CORS
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origins: "*"
+            allowed-methods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowed-headers: "*"
+            allow-credentials: false
+            max-age: 3600
+
+# EUREKA CLIENT
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+    lease-renewal-interval-in-seconds: 30
+
+# RESILIENCE4J (Circuit Breaker)
+resilience4j:
+  circuitbreaker:
+    instances:
+      authCircuitBreaker:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10000
+        permitted-number-of-calls-in-half-open-state: 3
+      citasCircuitBreaker:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10000
+      productosCircuitBreaker:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10000
+      pedidosCircuitBreaker:
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10000
+
+# ACTUATOR
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway,metrics
+  endpoint:
+    health:
+      show-details: always
+    gateway:
+      enabled: true
+
+# LOGGING
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    reactor.netty: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
